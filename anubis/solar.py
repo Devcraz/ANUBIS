@@ -1,4 +1,4 @@
-# Solar analysis module for Anubis
+# Solar analysis module for ANUBIS
 # Estimates location from shadow direction and solar position.
 
 import cv2
@@ -14,7 +14,7 @@ class SolarDetector:
     to find geographic locations compatible with the observed shadow.
     """
 
-    def __init__(self,grid_step=0.5):
+    def __init__(self, grid_step=0.5):
         self.grid_step = grid_step
 
     def detect_shadow_mask(self, image):
@@ -27,6 +27,7 @@ class SolarDetector:
         upper = np.array([180, 80, 80])
         mask = cv2.inRange(hsv, lower, upper)
         return mask
+
     def estimate_shadow_angle(self, mask, image):
         """
         Estimate the main direction of shadows.
@@ -37,59 +38,54 @@ class SolarDetector:
         edges = cv2.Canny(mask, 50, 150)
         lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=50)
 
-        if lines is None
+        if lines is None:
             return None
+
         angles = []
-        for rho_theta in lines: 
+        for rho_theta in lines:
             rho, theta = rho_theta[0]
-            # convert theta to angle from horizontal axis (right = 0)
             angle_rad = theta - np.pi / 2
             angle_deg = np.degrees(angle_rad) % 360
             angles.append(angle_deg)
 
         if not angles:
             return None
-        
-        # return the median angle (less sensitive to outliers)
+
         return np.median(angles)
 
-    def compute_solar_azimuth(self, lat, don, dt):
+    def compute_solar_azimuth(self, lat, lon, dt):
         """
         Compute solar azimuth for a given location and datetime (UTC).
-        Azimuth in degrees (0 = South, positive westwards in pysolar?)
-        We'll adjust to standard: 0 = North , clockwise.
+        Returns azimuth in degrees (0 = North, clockwise).
         """
-        
-        # pysolar returns azimuth in degrees (0 = South, positive to West)
         pysolar_az = solar.get_azimuth(lat, lon, dt)
-        # convert to standard convention: 0 = North, clockwise
         standard_az = (pysolar_az + 180) % 360
         return standard_az
+
     def find_compatible_locations(self, shadow_angle, timestamp, orientation=0):
         """
-        Given shadow direction (angle from right of image), UTC timestamp,
-        and camera orientation (0 if right side of image points East, etc.),
+        Given shadow direction, UTC timestamp, and optional camera orientation,
         return a list of (lat, lon) where the solar azimuth matches.
-        Grid search over the globe.
         """
         if shadow_angle is None:
             return []
 
-            compatible = []
-            # iteration over latitudes and longitudes 
-            for lat in np.arange(-90, 90 + self.grid_step, self.grid_step):
-                for lon in np.arange(-180, 180 + self.grid_step, self.grid_step):
-                    try:
-                        solar_az = self.compute_solar_azimuth(lat, lon, timestamp)
-                    except:
-                        continue # sun below horizon or invalid
+        compatible = []
+        for lat in np.arange(-90, 90 + self.grid_step, self.grid_step):
+            for lon in np.arange(-180, 180 + self.grid_step, self.grid_step):
+                try:
+                    solar_az = self.compute_solar_azimuth(lat, lon, timestamp)
+                except:
+                    continue
 
-                    expected_shadow = (solar_az + 180) % 360
-                    diff = abs((expected_shadow - shadow_angle + 180) % 360 - 180)
+                expected_shadow = (solar_az + 180) % 360
+                diff = abs((expected_shadow - shadow_angle + 180) % 360 - 180)
 
-                    if diff < 10: # tolerance in degrees
-                        compatible.append((lat, lon))
-            return compatible
+                if diff < 10:
+                    compatible.append((lat, lon))
+
+        return compatible
+
     def process_image(self, image_path, manual_datetime=None, orientation=0):
         """
         Full pipeline for an image:
@@ -110,10 +106,9 @@ class SolarDetector:
         if manual_datetime:
             dt = manual_datetime
         if dt is None:
-            return {"error": "No datetime found. Provide manual_datetime"}
+            return {"error": "No datetime found. Provide manual_datetime."}
 
-        # Make sure datetime is UTC aware 
-        if dt.tzinfo is None: 
+        if dt.tzinfo is None:
             from datetime import timezone
             dt = dt.replace(tzinfo=timezone.utc)
 
@@ -126,7 +121,6 @@ class SolarDetector:
         return {
             "shadow_angle": angle,
             "datetime": dt.isoformat(),
-            "compatible_locations": locations
+            "compatible_locations": locations,
             "count": len(locations)
-
         }
